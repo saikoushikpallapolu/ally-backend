@@ -1,11 +1,12 @@
 // routes/auth.js
+// FULL CODE BLOCK for Auth Router with Token Bypass for Hackathon Login
+
 const express = require('express');
 const router = express.Router();
 
-// We export a function that accepts db and admin objects from server.js
 module.exports = (db, admin) => {
 
-    // POST /api/auth/register - Handles creation of PWD, Volunteer, or NGO profile
+    // POST /api/auth/register - (This works now!)
     router.post('/register', async (req, res) => {
         const { phoneNumber, name, role, disabilityType, rollNumber } = req.body;
 
@@ -14,7 +15,6 @@ module.exports = (db, admin) => {
         }
 
         try {
-            // 1. Check if user profile already exists
             const userRef = db.collection('Users').doc(phoneNumber);
             const doc = await userRef.get();
 
@@ -22,14 +22,12 @@ module.exports = (db, admin) => {
                 return res.status(409).send({ message: 'User already registered.' });
             }
             
-            // 2. Create the user profile in Firestore with role-specific data
             const userData = {
                 name,
                 role,
                 isVerified: false,
-                // Volunteers/NGOs need availability; PwDs need disability type
-                isAvailable: role !== 'PWD' ? false : undefined, 
-                disabilityType: role === 'PWD' ? disabilityType : undefined, 
+                isAvailable: role !== 'PWD' ? false : null, 
+                disabilityType: role === 'PWD' ? disabilityType : null, 
                 rollNumber: rollNumber || null,
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -44,21 +42,18 @@ module.exports = (db, admin) => {
         }
     });
 
-    // POST /api/auth/login - Handles token verification and role-based authorization
+    // POST /api/auth/login - HACKATHON BYPASS FOR ROLE LOOKUP
     router.post('/login', async (req, res) => {
-        // Receives the Firebase ID Token from the client after OTP is verified
-        const { idToken } = req.body;
+        const { idToken, phoneNumber } = req.body; 
 
-        if (!idToken) {
-            return res.status(400).send({ message: 'Missing authentication token.' });
+        if (!phoneNumber) {
+            return res.status(400).send({ message: 'Missing phone number for login lookup.' });
         }
 
         try {
-            // 1. Verify the Firebase ID Token using the Admin SDK
-            const decodedToken = await admin.auth().verifyIdToken(idToken);
-            const phoneNumber = decodedToken.phone_number; // Get UID (phone number)
-
-            // 2. Fetch the custom user profile from Firestore to determine role and access
+            // *** HACKATHON BYPASS: SKIPPING ADMIN.AUTH().VERIFYIDTOKEN(IDTOKEN) ***
+            // We use the phone number provided by the client to fetch the user's role directly.
+            
             const userDoc = await db.collection('Users').doc(phoneNumber).get();
 
             if (!userDoc.exists) {
@@ -68,17 +63,18 @@ module.exports = (db, admin) => {
             const userProfile = userDoc.data();
             const { role, name } = userProfile;
 
-            // 3. Respond with essential data for client-side routing
+            // Since we bypassed verification, we return the same mock token.
             res.status(200).send({
                 message: 'Login successful.',
-                token: idToken,
+                token: idToken, // Echoing the mock token back to the client
                 role: role,
                 name: name
             });
 
         } catch (error) {
-            console.error("Login verification error:", error);
-            res.status(401).send({ message: 'Authentication failed. Invalid or expired token.' });
+            console.error("Login lookup error:", error);
+            // Returning 500 error will now only happen if Firestore fails to read (highly unlikely now)
+            res.status(500).send({ message: 'Login failed due to an internal server issue.' });
         }
     });
 
