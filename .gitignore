@@ -4,3 +4,4 @@ node_modules/
 # Environment variables/Secrets (CRITICAL for security)
 .env
 *.json
+.vercel
